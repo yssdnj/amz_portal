@@ -208,6 +208,16 @@ div.card {
 
 <div class="grid">
 
+  <!-- 产品列表 -->
+  <a class="card" href="/products/" target="_blank" rel="noopener">
+    <span class="badge badge-live">● 运行中</span>
+    <span class="card-icon">📦</span>
+    <div class="card-name">产品列表</div>
+    <div class="card-sub">Product Catalog</div>
+    <p class="card-desc">产品 SKU 档案管理，含 ASIN / MSKU / FNSKU 映射、颜色尺寸属性查询</p>
+    <span class="card-arrow">↗</span>
+  </a>
+
   <!-- 广告漏斗分析 -->
   <a class="card" href="/ads/" target="_blank" rel="noopener">
     <span class="badge badge-live">● 运行中</span>
