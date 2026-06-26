@@ -238,6 +238,16 @@ div.card {
     <span class="card-arrow">↗</span>
   </a>
 
+  <!-- 西柚关键词 -->
+  <a class="card" href="/xiyou/" target="_blank" rel="noopener">
+    <span class="badge badge-live">● 运行中</span>
+    <span class="card-icon">🍋</span>
+    <div class="card-name">西柚关键词</div>
+    <div class="card-sub">Xiyou Keyword Research</div>
+    <p class="card-desc">关键词流量分析、搜索趋势、竞品词挖掘，数据缓存加速查询</p>
+    <span class="card-arrow">↗</span>
+  </a>
+
   <!-- 选品开发 -->
   <div class="card">
     <span class="badge badge-soon">开发中</span>
