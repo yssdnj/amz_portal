@@ -248,6 +248,16 @@ div.card {
     <span class="card-arrow">↗</span>
   </a>
 
+  <!-- 亚马逊官方广告API -->
+  <a class="card" href="/amazon-official-ads/" target="_blank" rel="noopener">
+    <span class="badge badge-live">● 运行中</span>
+    <span class="card-icon">🔗</span>
+    <div class="card-name">亚马逊官方广告API</div>
+    <div class="card-sub">Amazon Ads API</div>
+    <p class="card-desc">官方广告接口授权、报表拉取、广告数据同步与管理</p>
+    <span class="card-arrow">↗</span>
+  </a>
+
   <!-- 选品开发 -->
   <div class="card">
     <span class="badge badge-soon">开发中</span>
