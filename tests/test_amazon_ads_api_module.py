@@ -31,3 +31,24 @@ def test_nginx_proxies_amazon_ads_api_to_port_5010():
     assert "sub_filter_types application/javascript text/css;" in config
     assert """sub_filter "'/api/" "'/amazon-official-ads/api/";""" in config
     assert """sub_filter '"/api/' '"/amazon-official-ads/api/';""" in config
+
+
+def test_nginx_location_order_matches_cloud_server_config():
+    config = read_project_file("nginx.conf")
+    ordered_markers = [
+        "location = /products",
+        "location /products/",
+        "location = /ads",
+        "location = /toolkit",
+        "location /ads/",
+        "location /toolkit/",
+        "location = /xiyou",
+        "location /xiyou/",
+        "location = /amazon-official-ads",
+        "location /amazon-official-ads/",
+        "location / {",
+    ]
+
+    positions = [config.index(marker) for marker in ordered_markers]
+
+    assert positions == sorted(positions)
