@@ -44,6 +44,8 @@ def test_nginx_location_order_matches_cloud_server_config():
         "location /toolkit/",
         "location = /xiyou",
         "location /xiyou/",
+        "location = /amazon-official-sp",
+        "location /amazon-official-sp/",
         "location = /amazon-official-ads",
         "location /amazon-official-ads/",
         "location / {",

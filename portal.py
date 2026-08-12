@@ -1,8 +1,37 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+import socket
 import uvicorn
 
 app = FastAPI(title="整合入口 - Amazon Tools Portal")
+
+SERVICES = {
+    "products": {"name": "产品列表", "port": 5003},
+    "ads": {"name": "广告漏斗分析", "port": 5001},
+    "toolkit": {"name": "运营工具箱", "port": 5002},
+    "xiyou": {"name": "西柚关键词", "port": 5004},
+    "amazon_official_sp": {"name": "亚马逊官方SP API", "port": 8015},
+    "amazon_official_ads": {"name": "亚马逊官方广告API", "port": 5010},
+}
+
+
+def is_port_open(port: int, host: str = "127.0.0.1", timeout: float = 0.2) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def get_service_statuses() -> dict[str, dict[str, object]]:
+    return {
+        key: {
+            "name": service["name"],
+            "port": service["port"],
+            "online": is_port_open(service["port"]),
+        }
+        for key, service in SERVICES.items()
+    }
 
 HTML = r"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -176,6 +205,16 @@ div.card {
   color: #60a5fa;
   border: 1px solid rgba(59, 130, 246, 0.28);
 }
+.badge-checking {
+  background: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+.badge-offline {
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
 .badge-soon {
   background: rgba(212, 168, 67, 0.12);
   color: #d4a843;
@@ -209,8 +248,8 @@ div.card {
 <div class="grid">
 
   <!-- 产品列表 -->
-  <a class="card" href="/products/" target="_blank" rel="noopener">
-    <span class="badge badge-live">● 运行中</span>
+  <a class="card" href="/products/" target="_blank" rel="noopener" data-service="products" data-local-url="http://127.0.0.1:5003/">
+    <span class="badge badge-checking" data-status-badge>● 检测中</span>
     <span class="card-icon">📦</span>
     <div class="card-name">产品列表</div>
     <div class="card-sub">Product Catalog</div>
@@ -219,8 +258,8 @@ div.card {
   </a>
 
   <!-- 广告漏斗分析 -->
-  <a class="card" href="/ads/" target="_blank" rel="noopener">
-    <span class="badge badge-live">● 运行中</span>
+  <a class="card" href="/ads/" target="_blank" rel="noopener" data-service="ads" data-local-url="http://127.0.0.1:5001/">
+    <span class="badge badge-checking" data-status-badge>● 检测中</span>
     <span class="card-icon">📊</span>
     <div class="card-name">广告漏斗分析</div>
     <div class="card-sub">Ad Analytics Dashboard</div>
@@ -229,8 +268,8 @@ div.card {
   </a>
 
   <!-- 运营工具箱 -->
-  <a class="card" href="/toolkit/" target="_blank" rel="noopener">
-    <span class="badge badge-live">● 运行中</span>
+  <a class="card" href="/toolkit/" target="_blank" rel="noopener" data-service="toolkit" data-local-url="http://127.0.0.1:5002/">
+    <span class="badge badge-checking" data-status-badge>● 检测中</span>
     <span class="card-icon">🛠️</span>
     <div class="card-name">运营工具箱</div>
     <div class="card-sub">Operations Toolkit</div>
@@ -239,8 +278,8 @@ div.card {
   </a>
 
   <!-- 西柚关键词 -->
-  <a class="card" href="/xiyou/" target="_blank" rel="noopener">
-    <span class="badge badge-live">● 运行中</span>
+  <a class="card" href="/xiyou/" target="_blank" rel="noopener" data-service="xiyou" data-local-url="http://127.0.0.1:5004/">
+    <span class="badge badge-checking" data-status-badge>● 检测中</span>
     <span class="card-icon">🍋</span>
     <div class="card-name">西柚关键词</div>
     <div class="card-sub">Xiyou Keyword Research</div>
@@ -248,9 +287,19 @@ div.card {
     <span class="card-arrow">↗</span>
   </a>
 
+  <!-- 亚马逊官方SP API -->
+  <a class="card" href="/amazon-official-sp/" target="_blank" rel="noopener" data-service="amazon_official_sp" data-local-url="http://127.0.0.1:8015/">
+    <span class="badge badge-checking" data-status-badge>● 检测中</span>
+    <span class="card-icon">🛍️</span>
+    <div class="card-name">亚马逊官方SP API</div>
+    <div class="card-sub">Amazon Selling Partner API</div>
+    <p class="card-desc">官方促销与优惠券报告同步、每日快照、活动及 ASIN 表现分析</p>
+    <span class="card-arrow">↗</span>
+  </a>
+
   <!-- 亚马逊官方广告API -->
-  <a class="card" href="/amazon-official-ads/" target="_blank" rel="noopener">
-    <span class="badge badge-live">● 运行中</span>
+  <a class="card" href="/amazon-official-ads/" target="_blank" rel="noopener" data-service="amazon_official_ads" data-local-url="http://127.0.0.1:5010/">
+    <span class="badge badge-checking" data-status-badge>● 检测中</span>
     <span class="card-icon">🔗</span>
     <div class="card-name">亚马逊官方广告API</div>
     <div class="card-sub">Amazon Ads API</div>
@@ -289,6 +338,47 @@ div.card {
 
 <div class="footer">Amazon Tools Portal &nbsp;·&nbsp; 整合入口 &nbsp;·&nbsp; 2026</div>
 
+<script>
+function useLocalModuleLinks() {
+  const isLocalHost = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
+  if (!isLocalHost || location.port !== '5000') return;
+  document.querySelectorAll('[data-local-url]').forEach((card) => {
+    card.href = card.dataset.localUrl;
+  });
+}
+
+async function refreshStatuses() {
+  try {
+    const response = await fetch('/api/status');
+    if (!response.ok) throw new Error('status request failed');
+    const data = await response.json();
+    for (const [serviceId, service] of Object.entries(data.services || {})) {
+      const card = document.querySelector(`[data-service="${serviceId}"]`);
+      const badge = card?.querySelector('[data-status-badge]');
+      if (!badge) continue;
+      badge.classList.remove('badge-checking', 'badge-live', 'badge-offline');
+      if (service.online) {
+        badge.classList.add('badge-live');
+        badge.textContent = '● 运行中';
+      } else {
+        badge.classList.add('badge-offline');
+        badge.textContent = '● 未启动';
+      }
+    }
+  } catch (error) {
+    document.querySelectorAll('[data-status-badge]').forEach((badge) => {
+      badge.classList.remove('badge-checking', 'badge-live');
+      badge.classList.add('badge-offline');
+      badge.textContent = '● 未启动';
+    });
+  }
+}
+
+useLocalModuleLinks();
+refreshStatuses();
+setInterval(refreshStatuses, 30000);
+</script>
+
 </body>
 </html>"""
 
@@ -296,6 +386,11 @@ div.card {
 @app.get("/", response_class=HTMLResponse)
 def index():
     return HTML
+
+
+@app.get("/api/status")
+def status():
+    return {"services": get_service_statuses()}
 
 
 if __name__ == "__main__":
