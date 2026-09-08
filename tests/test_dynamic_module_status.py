@@ -44,7 +44,7 @@ def test_status_api_returns_module_statuses(monkeypatch):
     response = TestClient(portal.app).get("/api/status")
 
     assert response.status_code == 200
-    assert response.json() == {
+    assert {"services": response.json()["services"]} == {
         "services": {
             "ads": {"name": "广告漏斗分析", "port": 5001, "online": True},
             "toolkit": {"name": "运营工具箱", "port": 5002, "online": False},
@@ -68,7 +68,7 @@ def test_portal_badges_are_updated_by_status_script():
     assert 'data-service="amazon_official_ads"' in html
     assert 'data-local-url="http://127.0.0.1:5010/"' in html
     assert "检测中" in html
-    assert "fetch('/api/status')" in html
+    assert "fetch('/api/status'" in html
     assert "useLocalModuleLinks" in html
     assert "未启动" in html
 

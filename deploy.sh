@@ -20,6 +20,9 @@ cd "$PROJECT_DIR"
 git checkout -- deploy.sh
 git pull origin "$BRANCH"
 
+# 安装门户依赖（包含进程控制所需的 psutil）
+python3 -m pip install -r requirements.txt --break-system-packages
+
 # 2. 停止旧进程
 echo ""
 echo "▶ 停止旧服务..."
