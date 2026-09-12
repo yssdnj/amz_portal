@@ -20,7 +20,13 @@ cd "$PROJECT_DIR"
 git checkout -- deploy.sh
 git pull origin "$BRANCH"
 
-# 安装门户依赖（包含进程控制所需的 psutil）
+# 登录配置由 portal.py 通过 python-dotenv 读取，部署脚本只检查文件存在。
+if [ ! -f "$PROJECT_DIR/.env" ]; then
+    echo "错误：缺少 $PROJECT_DIR/.env，请先按 .env.example 配置门户登录。" >&2
+    exit 1
+fi
+
+# 安装门户依赖（包含进程控制和 .env 加载依赖）
 python3 -m pip install -r requirements.txt --break-system-packages
 
 # 2. 停止旧进程

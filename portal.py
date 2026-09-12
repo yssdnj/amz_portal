@@ -1,17 +1,53 @@
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
-import ipaddress
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from dotenv import load_dotenv
 import os
 from pathlib import Path
 import platform
 import secrets
 import socket
-from urllib.parse import urlsplit
+from urllib.parse import quote, unquote, urlsplit
 import uvicorn
+from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware
 
+from login_page import render_login_page
 from service_control import PROJECT_CONFIG, ServiceController
 
+
+load_dotenv(Path(__file__).with_name(".env"))
+
+
+def required_setting(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+LOGIN_USERNAME = required_setting("PORTAL_LOGIN_USERNAME")
+LOGIN_PASSWORD = required_setting("PORTAL_LOGIN_PASSWORD")
+SESSION_SECRET = required_setting("PORTAL_SESSION_SECRET")
+COOKIE_SECURE = os.environ.get("PORTAL_COOKIE_SECURE", "false").strip().lower() in {
+    "1", "true", "yes", "on",
+}
+
 app = FastAPI(title="整合入口 - Amazon Tools Portal")
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SESSION_SECRET,
+    session_cookie="amazon_portal_session",
+    max_age=12 * 60 * 60,
+    path="/",
+    same_site="lax",
+    https_only=COOKIE_SECURE,
+)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+    next: str | None = None
 
 SERVICES = {
     "products": {"name": "产品列表", "port": 5003},
@@ -91,6 +127,18 @@ body {
   margin-left: auto;
   letter-spacing: 0.3px;
 }
+.logout-button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #45485d;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+}
+.logout-button:hover { color: #f1f5f9; background: #303345; }
+.logout-button svg { width: 17px; height: 17px; }
 
 /* ── Hero ── */
 .hero {
@@ -273,7 +321,6 @@ dialog .warning { color: #efc178; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
 .dialog-actions button { border: 1px solid #545969; border-radius: 6px; padding: 9px 16px; background: #2a2d3a; color: #f1f5f9; }
 .dialog-actions .confirm-button { background: #216b50; border-color: #319372; }
-dialog input { margin-top: 16px; width: 100%; background: #11131c; border: 1px solid #636b7b; border-radius: 6px; color: #fff; padding: 10px; font: inherit; }
 @media (prefers-reduced-motion: reduce) { .switch-thumb { transition: none; } }
 </style>
 </head>
@@ -283,6 +330,9 @@ dialog input { margin-top: 16px; width: 100%; background: #11131c; border: 1px s
   <span class="topbar-logo">🚀</span>
   <span class="topbar-title">整合入口</span>
   <span class="topbar-sub">Amazon Tools Portal &nbsp;·&nbsp; 47.84.113.76</span>
+  <button type="button" class="logout-button" id="logout-button" aria-label="退出登录" title="退出登录">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/></svg>
+  </button>
 </div>
 
 <div class="hero">
@@ -394,23 +444,16 @@ dialog input { margin-top: 16px; width: 100%; background: #11131c; border: 1px s
     </div>
   </form>
 </dialog>
-<dialog id="auth-dialog" aria-labelledby="auth-title">
-  <form method="dialog">
-    <h3 id="auth-title">管理员验证</h3>
-    <input id="control-token" type="password" aria-label="管理员控制密钥" placeholder="管理员控制密钥" autocomplete="off">
-    <div class="dialog-actions">
-      <button value="cancel">取消</button>
-      <button value="confirm" class="confirm-button">验证</button>
-    </div>
-  </form>
-</dialog>
-
 <script>
 let serviceStatuses = {};
 let controlSettings = {};
-let controlToken = '';
 let refreshing = false;
 const pendingServices = new Set();
+
+function redirectToLogin() {
+  const prefix = location.pathname.replace(/\/$/, '');
+  location.assign(prefix + '/login?next=' + encodeURIComponent(location.pathname));
+}
 
 function initializeControls() {
   document.querySelectorAll('a.card[data-service]').forEach((link) => {
@@ -475,6 +518,7 @@ async function refreshStatuses() {
   refreshing = true;
   try {
     const response = await fetch('/api/status', {cache: 'no-store', signal: AbortSignal.timeout(10000)});
+    if (response.status === 401) { redirectToLogin(); return; }
     if (!response.ok) throw new Error('status request failed');
     const data = await response.json();
     serviceStatuses = data.services || {};
@@ -515,23 +559,16 @@ async function performAction(card, action) {
     document.getElementById('restart-warning').hidden = !serviceStatuses[id].restart_warning;
     if (!await showDialog('restart-dialog')) return;
   }
-  if (controlSettings.requires_token && !controlToken) {
-    if (!await showDialog('auth-dialog')) return;
-    controlToken = document.getElementById('control-token').value;
-    document.getElementById('control-token').value = '';
-    if (!controlToken) return;
-  }
   pendingServices.add(id);
   serviceStatuses[id].error = null;
   renderStatus(card, serviceStatuses[id]);
   let failure = null;
   try {
     const headers = {'X-Portal-Control': '1'};
-    if (controlToken) headers.Authorization = 'Bearer ' + controlToken;
     const response = await fetch(`/api/services/${id}/${action}`, {method: 'POST', headers, signal: AbortSignal.timeout(15000)});
+    if (response.status === 401) { redirectToLogin(); return; }
     const result = await response.json();
     if (!response.ok) {
-      if (response.status === 401) controlToken = '';
       throw new Error(result.detail || '操作失败');
     }
     serviceStatuses[id].busy = true;
@@ -546,6 +583,12 @@ async function performAction(card, action) {
   }
 }
 
+document.getElementById('logout-button').addEventListener('click', async () => {
+  const response = await fetch('/api/auth/logout', {method: 'POST'});
+  const result = await response.json();
+  location.assign(result.redirect);
+});
+
 initializeControls();
 useLocalModuleLinks();
 refreshStatuses();
@@ -556,43 +599,110 @@ setInterval(refreshStatuses, 3000);
 </html>"""
 
 
+def external_prefix(request: Request) -> str:
+    value = request.headers.get("x-forwarded-prefix", "").strip()
+    if not value or value == "/":
+        return ""
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or parsed.query
+        or parsed.fragment
+        or not parsed.path.startswith("/")
+        or parsed.path.startswith("//")
+        or "\\" in parsed.path
+    ):
+        return ""
+    return parsed.path.rstrip("/")
+
+
+def prefix_root(prefix: str) -> str:
+    return f"{prefix}/" if prefix else "/"
+
+
+def safe_next_path(candidate: str | None, prefix: str) -> str:
+    fallback = prefix_root(prefix)
+    if not candidate or any(ord(char) < 32 for char in candidate):
+        return fallback
+    parsed = urlsplit(candidate)
+    decoded_path = unquote(parsed.path)
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or not parsed.path.startswith("/")
+        or parsed.path.startswith("//")
+        or "\\" in decoded_path
+        or any(part in {".", ".."} for part in decoded_path.split("/"))
+    ):
+        return fallback
+    if prefix and decoded_path != prefix and not decoded_path.startswith(prefix + "/"):
+        return fallback
+    return candidate
+
+
+def require_session(request: Request) -> None:
+    if request.session.get("authenticated") is not True:
+        raise HTTPException(401, "请先登录")
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, next: str | None = None):
+    prefix = external_prefix(request)
+    return render_login_page(safe_next_path(next, prefix), prefix)
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginRequest, request: Request):
+    username_matches = secrets.compare_digest(payload.username, LOGIN_USERNAME)
+    password_matches = secrets.compare_digest(payload.password, LOGIN_PASSWORD)
+    if not (username_matches and password_matches):
+        raise HTTPException(401, "账号或密码不正确")
+    request.session.clear()
+    request.session["authenticated"] = True
+    prefix = external_prefix(request)
+    return {"redirect": safe_next_path(payload.next, prefix)}
+
+
+@app.get("/api/auth/check", status_code=204)
+def auth_check(request: Request):
+    require_session(request)
+    return Response(status_code=204)
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request):
+    request.session.clear()
+    return {"redirect": external_prefix(request) + "/login"}
+
+
 @app.get("/", response_class=HTMLResponse)
-def index():
+def index(request: Request):
+    if request.session.get("authenticated") is not True:
+        prefix = external_prefix(request)
+        root = prefix_root(prefix)
+        return RedirectResponse(
+            f"{prefix}/login?next={quote(root, safe='/')}",
+            status_code=302,
+        )
     return HTML
-
-
-def is_local_request(request: Request) -> bool:
-    try:
-        peer = request.client.host if request.client else ""
-        if not ipaddress.ip_address(peer).is_loopback:
-            return False
-        forwarded = request.headers.get("x-forwarded-for") or request.headers.get("x-real-ip")
-        return not forwarded or all(ipaddress.ip_address(ip.strip()).is_loopback for ip in forwarded.split(","))
-    except ValueError:
-        return False
 
 
 @app.get("/api/status")
 def status(request: Request):
-    local = is_local_request(request)
+    require_session(request)
     return {"services": get_service_statuses(), "controls": {
         "platform": platform.system(),
-        "enabled": local or bool(os.environ.get("PORTAL_CONTROL_TOKEN")),
-        "requires_token": not local,
+        "enabled": True,
     }}
 
 
 @app.post("/api/services/{service_id}/{action}", status_code=202)
 def control_service(service_id: str, action: str, request: Request):
+    require_session(request)
     origin = request.headers.get("origin")
     if request.headers.get("x-portal-control") != "1" or (origin and urlsplit(origin).hostname != request.url.hostname):
         raise HTTPException(403, "不允许跨站操作")
-    if not is_local_request(request):
-        token = os.environ.get("PORTAL_CONTROL_TOKEN")
-        if not token:
-            raise HTTPException(403, "服务器尚未配置管理员控制密钥")
-        if not secrets.compare_digest(request.headers.get("authorization", ""), f"Bearer {token}"):
-            raise HTTPException(401, "管理员控制密钥无效")
     if service_id not in SERVICES or action not in {"start", "stop", "restart"}:
         raise HTTPException(404, "项目或操作不存在")
     try:

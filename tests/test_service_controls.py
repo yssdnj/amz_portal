@@ -4,14 +4,13 @@ import sys
 import time
 
 import pytest
-from fastapi.testclient import TestClient
 
 import portal
 
 
 @pytest.fixture
-def client():
-    return TestClient(portal.app, client=("127.0.0.1", 12345))
+def client(authenticated_client):
+    return authenticated_client
 
 
 def test_control_endpoints_reject_unknown_services(client):
@@ -29,26 +28,6 @@ def test_control_requires_same_origin_custom_header(client):
     assert client.post("/api/services/ads/stop").status_code == 403
     response = client.post("/api/services/ads/stop", headers={
         "X-Portal-Control": "1", "Origin": "https://untrusted.example",
-    })
-    assert response.status_code == 403
-
-
-def test_remote_control_requires_configured_token(monkeypatch):
-    monkeypatch.delenv("PORTAL_CONTROL_TOKEN", raising=False)
-    client = TestClient(portal.app, client=("203.0.113.1", 12345))
-    assert client.post("/api/services/ads/stop", headers={"X-Portal-Control": "1"}).status_code == 403
-    monkeypatch.setenv("PORTAL_CONTROL_TOKEN", "test-admin-key")
-    assert client.post("/api/services/ads/stop", headers={"X-Portal-Control": "1"}).status_code == 401
-    response = client.post("/api/services/unknown/stop", headers={
-        "X-Portal-Control": "1", "Authorization": "Bearer test-admin-key",
-    })
-    assert response.status_code == 404
-
-
-def test_nginx_forwarded_client_is_not_treated_as_local(client, monkeypatch):
-    monkeypatch.delenv("PORTAL_CONTROL_TOKEN", raising=False)
-    response = client.post("/api/services/ads/stop", headers={
-        "X-Portal-Control": "1", "X-Forwarded-For": "203.0.113.5",
     })
     assert response.status_code == 403
 

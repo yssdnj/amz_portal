@@ -26,14 +26,14 @@ def setup_page(page, system="Windows"):
               "action": None, "can_start": True, "can_restart": system == "Linux",
               "restart_warning": True}
         for key, service in portal.SERVICES.items()
-    }, "controls": {"platform": system, "enabled": True, "requires_token": False}}
+    }, "controls": {"platform": system, "enabled": True}}
     requests = []
     page.route("http://127.0.0.1:5000/", lambda route: route.fulfill(body=portal.HTML, content_type="text/html"))
     page.route("**/api/status", lambda route: route.fulfill(json=state))
 
     def operate(route):
         key, action = route.request.url.split("/")[-2:]
-        requests.append((key, action))
+        requests.append((key, action, route.request.headers.get("authorization")))
         state["services"][key]["online"] = action != "stop"
         route.fulfill(status=202, json={"accepted": True})
 
@@ -52,7 +52,8 @@ def test_single_switch_starts_and_pauses_without_opening_project(page):
     expect(toggle).to_be_enabled()
     toggle.click()
     expect(toggle).to_have_attribute("aria-checked", "true")
-    assert requests == [("ads", "stop"), ("ads", "start")]
+    assert requests == [("ads", "stop", None), ("ads", "start", None)]
+    assert page.locator("#auth-dialog").count() == 0
     assert len(page.context.pages) == 1
     expect(page.locator('a[data-local-url="http://127.0.0.1:5001/"]')).to_have_attribute("href", "http://127.0.0.1:5001/")
     assert page.get_by_role("switch").count() == 6
@@ -73,7 +74,7 @@ def test_linux_restart_requires_confirmation_and_cancel_sends_nothing(page):
     assert response.value.status == 202
     expect(page.locator("#restart-dialog")).not_to_be_visible()
     expect(button).to_be_enabled()
-    assert requests == [("ads", "restart")]
+    assert requests == [("ads", "restart", None)]
 
 
 def test_busy_and_unknown_status_disable_controls(page):

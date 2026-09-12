@@ -92,23 +92,28 @@ chmod +x deploy.sh && ./deploy.sh
 
 Linux 下会识别正在运行项目所属的 systemd 服务，并记录到 `.portal-runtime/`，暂停时调用 `systemctl stop`，防止 `Restart=always` 立即拉起。对于已停止、尚未被门户识别的 systemd 服务，配置 `PORTAL_<服务ID大写>_UNIT`，例如 `PORTAL_ADS_UNIT=ads-dashboard.service`，值须为服务器上真实的服务名；该 unit 的 `WorkingDirectory` 必须属于对应项目。重启部署后会将进程交回 systemd。门户用户需要相应的进程管理和 systemd 权限。
 
-### 云端控制权限
+### 门户登录与控制权限
 
-本机直连可以直接使用开关。通过 Nginx 或远程访问时，需要在**门户进程环境**中配置 `PORTAL_CONTROL_TOKEN`，页面首次操作时输入这个管理员密钥；密钥仅保留在当前页面内存中。未配置时，远程访客仍能查看状态和进入项目，但控制按钮禁用。
+门户使用一个独立的单账号登录会话保护首页、状态 API、项目服务 API，以及 Nginx 下的所有 `/amazon/` 页面和 API。登录成功后即可使用启动、暂停和重启控制，不再需要额外的管理员控制密钥。会话有效期为 12 小时，退出登录会立即清除会话。
+
+从示例创建仅供本项目使用的 `.env`，并限制文件权限：
 
 ```bash
-export PORTAL_CONTROL_TOKEN='替换为随机生成的管理员密钥'
+cp .env.example .env
+chmod 600 .env
 chmod +x deploy.sh && ./deploy.sh
 ```
 
-若门户由 systemd 启动，请将密钥写入该服务使用的受限权限 `EnvironmentFile`，然后重启门户。沿用当前 Nginx 的 `X-Real-IP`、`X-Forwarded-For` 配置即可；远程密钥应通过 HTTPS 或可信隧道传输。
+必须配置 `PORTAL_LOGIN_USERNAME`、`PORTAL_LOGIN_PASSWORD` 和 `PORTAL_SESSION_SECRET`；缺少任意一项时门户会明确拒绝启动。生产 HTTPS 网关应设置 `PORTAL_COOKIE_SECURE=true`。`.env` 已被 Git 忽略，不要提交或输出其中的真实密码和会话密钥。
+
+共享网关使用 `amazon.conf` 中独立的 `/_amazon_session` 子请求验证 Amazon 会话。`/amazon/login`、登录提交和退出接口公开；其他 Amazon 页面在未登录时跳转到 `/amazon/login`，API 保持 `401`。该配置不依赖或修改 stock 门户会话。
 
 ### 本地运行与验证
 
 ```bash
 python -m pip install -r requirements.txt
 python portal.py
-python -m pytest tests -q -p no:cacheprovider
+python -m pytest tests -q --basetemp .test-runs/pytest-simple-login -p no:cacheprovider
 ```
 
 门户应保持单个 worker 运行，操作锁和执行状态保存在该进程中。Windows 支持启动/暂停，重启按钮禁用。

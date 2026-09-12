@@ -1,7 +1,5 @@
 import socket
 
-from fastapi.testclient import TestClient
-
 import portal
 
 
@@ -31,7 +29,7 @@ def test_service_status_marks_open_and_closed_ports(monkeypatch):
     assert statuses["amazon_official_ads"]["port"] == 5010
 
 
-def test_status_api_returns_module_statuses(monkeypatch):
+def test_status_api_returns_module_statuses(monkeypatch, authenticated_client):
     monkeypatch.setattr(
         portal,
         "get_service_statuses",
@@ -41,7 +39,7 @@ def test_status_api_returns_module_statuses(monkeypatch):
         },
     )
 
-    response = TestClient(portal.app).get("/api/status")
+    response = authenticated_client.get("/api/status")
 
     assert response.status_code == 200
     assert {"services": response.json()["services"]} == {
