@@ -62,8 +62,8 @@ def test_login_compares_both_credentials_with_compare_digest(client, monkeypatch
 
     assert response.status_code == 200
     assert calls == [
-        ("test-user", "test-user"),
-        ("test-password", "test-password"),
+        (b"test-user", b"test-user"),
+        (b"test-password", b"test-password"),
     ]
 
 
@@ -82,6 +82,50 @@ def test_invalid_username_and_password_share_one_error(client):
     assert [response.status_code for response in responses] == [401, 401]
     assert responses[0].json() == responses[1].json()
     assert all("set-cookie" not in response.headers for response in responses)
+
+
+@pytest.mark.parametrize(
+    "credentials",
+    [
+        {"username": "用户", "password": "test-password"},
+        {"username": "test-user", "password": "密码"},
+    ],
+)
+def test_non_ascii_credentials_return_generic_401(client, credentials):
+    response = client.post(
+        "/api/auth/login",
+        json={**credentials, "next": "/"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "账号或密码不正确"}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, False),
+        ("true", True),
+        ("YES", True),
+        ("on", True),
+        ("1", True),
+        ("false", False),
+        ("NO", False),
+        ("off", False),
+        ("0", False),
+    ],
+)
+def test_cookie_secure_accepts_only_boolean_spellings(value, expected):
+    import portal
+
+    assert portal.parse_cookie_secure(value) is expected
+
+
+def test_cookie_secure_rejects_invalid_value():
+    import portal
+
+    with pytest.raises(RuntimeError, match="PORTAL_COOKIE_SECURE"):
+        portal.parse_cookie_secure("sometimes")
 
 
 def test_auth_check_and_logout_clear_the_session(client):

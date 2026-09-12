@@ -25,12 +25,23 @@ def required_setting(name: str) -> str:
     return value
 
 
+def parse_cookie_secure(value: str | None) -> bool:
+    if value is None:
+        return False
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(
+        "PORTAL_COOKIE_SECURE must be true/false, yes/no, on/off, or 1/0"
+    )
+
+
 LOGIN_USERNAME = required_setting("PORTAL_LOGIN_USERNAME")
 LOGIN_PASSWORD = required_setting("PORTAL_LOGIN_PASSWORD")
 SESSION_SECRET = required_setting("PORTAL_SESSION_SECRET")
-COOKIE_SECURE = os.environ.get("PORTAL_COOKIE_SECURE", "false").strip().lower() in {
-    "1", "true", "yes", "on",
-}
+COOKIE_SECURE = parse_cookie_secure(os.environ.get("PORTAL_COOKIE_SECURE"))
 
 app = FastAPI(title="整合入口 - Amazon Tools Portal")
 app.add_middleware(
@@ -654,8 +665,12 @@ def login_page(request: Request, next: str | None = None):
 
 @app.post("/api/auth/login")
 def login(payload: LoginRequest, request: Request):
-    username_matches = secrets.compare_digest(payload.username, LOGIN_USERNAME)
-    password_matches = secrets.compare_digest(payload.password, LOGIN_PASSWORD)
+    username_matches = secrets.compare_digest(
+        payload.username.encode("utf-8"), LOGIN_USERNAME.encode("utf-8")
+    )
+    password_matches = secrets.compare_digest(
+        payload.password.encode("utf-8"), LOGIN_PASSWORD.encode("utf-8")
+    )
     if not (username_matches and password_matches):
         raise HTTPException(401, "账号或密码不正确")
     request.session.clear()
