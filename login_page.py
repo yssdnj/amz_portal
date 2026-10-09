@@ -1,4 +1,5 @@
 import json
+from portal_theme import apply_theme
 
 
 def _script_value(value: str) -> str:
@@ -11,7 +12,7 @@ def _script_value(value: str) -> str:
 
 
 def render_login_page(next_path: str, prefix: str) -> str:
-    return LOGIN_PAGE.replace("__NEXT_PATH__", _script_value(next_path)).replace(
+    return apply_theme(LOGIN_PAGE).replace("__NEXT_PATH__", _script_value(next_path)).replace(
         "__PREFIX__", _script_value(prefix)
     )
 
@@ -22,6 +23,8 @@ LOGIN_PAGE = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>登录 · Amazon 工具中心</title>
+__THEME_CSS__
+__THEME_INIT__
 <style>
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; min-width: 0; }
@@ -30,11 +33,12 @@ body {
   min-height: 100svh;
   display: grid;
   place-items: center;
-  padding: 32px;
-  background: #0d0d1a;
-  color: #e2e8f0;
+  padding: 72px 32px 32px;
+  background: var(--page-bg);
+  color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
+.login-toolbar { position: absolute; top: 24px; right: 24px; }
 .login-shell {
   width: min(920px, 100%);
   display: grid;
@@ -46,7 +50,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  color: #f1f5f9;
+  color: var(--heading);
   font-size: 16px;
   font-weight: 700;
 }
@@ -55,48 +59,48 @@ body {
   height: 36px;
   display: grid;
   place-items: center;
-  border: 1px solid #34384a;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: #60a5fa;
-  background: #151622;
+  color: var(--blue);
+  background: var(--surface);
 }
 .brand-mark svg { width: 20px; height: 20px; }
 .intro h1 {
   max-width: 520px;
   margin: 54px 0 18px;
-  color: #f8fafc;
-  font-size: clamp(34px, 5vw, 48px);
+  color: var(--heading);
+  font-size: 42px;
   line-height: 1.25;
   letter-spacing: 0;
 }
 .intro p {
   max-width: 460px;
   margin: 0;
-  color: #a8b2c3;
+  color: var(--muted);
   font-size: 15px;
   line-height: 1.8;
 }
 .form-section {
   padding: 36px 0 36px 48px;
-  border-left: 1px solid #2a2c3c;
+  border-left: 1px solid var(--soft-border);
 }
 .form-section h2 {
   margin: 0 0 10px;
-  color: #f8fafc;
+  color: var(--heading);
   font-size: 26px;
   line-height: 1.3;
   letter-spacing: 0;
 }
 .form-section > p {
   margin: 0 0 30px;
-  color: #a8b2c3;
+  color: var(--muted);
   font-size: 13px;
   line-height: 1.7;
 }
 form { display: flex; flex-direction: column; }
 label {
   margin-bottom: 9px;
-  color: #cbd5e1;
+  color: var(--text);
   font-size: 13px;
   font-weight: 600;
 }
@@ -105,16 +109,16 @@ input {
   min-height: 48px;
   margin: 0 0 22px;
   padding: 12px 14px;
-  border: 1px solid #45495d;
+  border: 1px solid var(--border);
   border-radius: 7px;
   outline: none;
-  background: #13131f;
-  color: #f8fafc;
+  background: var(--surface);
+  color: var(--heading);
   font: inherit;
 }
-input::placeholder { color: #8792a4; }
-input:hover { border-color: #5b6076; }
-input:focus-visible { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18); }
+input::placeholder { color: var(--subtle); }
+input:hover { border-color: var(--blue); }
+input:focus-visible { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18); }
 .password-field { position: relative; }
 .password-field input { padding-right: 52px; }
 .reveal-button {
@@ -129,12 +133,12 @@ input:focus-visible { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165,
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #a8b2c3;
+  color: var(--muted);
   cursor: pointer;
 }
-.reveal-button:hover { background: #252735; color: #f1f5f9; }
+.reveal-button:hover { background: var(--hover-bg); color: var(--heading); }
 .reveal-button:focus-visible, .submit-button:focus-visible {
-  outline: 2px solid #60a5fa;
+  outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
 .reveal-button svg { width: 19px; height: 19px; }
@@ -142,7 +146,7 @@ input:focus-visible { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165,
 .error {
   min-height: 21px;
   margin: -7px 0 12px;
-  color: #fca5a5;
+  color: var(--red);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -153,26 +157,26 @@ input:focus-visible { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165,
   justify-content: space-between;
   gap: 16px;
   padding: 0 16px;
-  border: 1px solid #319372;
+  border: 1px solid var(--success-border);
   border-radius: 7px;
-  background: #16805d;
-  color: #ffffff;
+  background: var(--success-bg);
+  color: var(--on-success);
   font: inherit;
   font-weight: 700;
   cursor: pointer;
 }
-.submit-button:hover:not(:disabled) { background: #1b916a; }
+.submit-button:hover:not(:disabled) { background: var(--success-bg); }
 .submit-button:disabled { cursor: wait; opacity: 0.7; }
 .submit-button svg { width: 18px; height: 18px; }
 @media (max-width: 720px) {
-  body { place-items: start center; padding: 30px 24px; }
+  body { place-items: start center; padding: 80px 24px 30px; }
   .login-shell { grid-template-columns: 1fr; gap: 30px; }
   .intro h1 { margin-top: 32px; font-size: 32px; }
   .intro p { font-size: 14px; }
-  .form-section { padding: 30px 0 0; border-left: 0; border-top: 1px solid #2a2c3c; }
+  .form-section { padding: 30px 0 0; border-left: 0; border-top: 1px solid var(--soft-border); }
 }
 @media (max-width: 360px) {
-  body { padding: 24px 18px; }
+  body { padding: 80px 18px 24px; }
   .intro h1 { font-size: 29px; }
   .form-section h2 { font-size: 23px; }
 }
@@ -182,6 +186,7 @@ input:focus-visible { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165,
 </style>
 </head>
 <body>
+<div class="login-toolbar">__THEME_BUTTON__</div>
 <main class="login-shell">
   <section class="intro" aria-labelledby="portal-title">
     <div class="brand">
@@ -198,10 +203,10 @@ input:focus-visible { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165,
     <p>使用已配置的门户账号继续。</p>
     <form id="login-form">
       <label for="username">账号</label>
-      <input id="username" name="username" autocomplete="username" maxlength="80" required autofocus>
+      <input id="username" name="username" autocomplete="username" required autofocus>
       <label for="password">密码</label>
       <div class="password-field">
-        <input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
         <button class="reveal-button" id="reveal-password" type="button" aria-label="显示密码" aria-controls="password" aria-pressed="false" title="显示密码">
           <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.1 12a10.8 10.8 0 0 1 19.8 0 10.8 10.8 0 0 1-19.8 0Z"/><circle cx="12" cy="12" r="3"/></svg>
           <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="m2 2 20 20"/><path d="M6.7 6.7A11 11 0 0 0 2.1 12a10.8 10.8 0 0 0 15.2 5.3"/><path d="M10.7 4.1A10.8 10.8 0 0 1 21.9 12a10.9 10.9 0 0 1-2.2 3.2"/></svg>

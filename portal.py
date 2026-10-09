@@ -1,17 +1,21 @@
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from dotenv import load_dotenv
+from html import escape
+import json
 import os
 from pathlib import Path
 import platform
 import secrets
 import socket
 from urllib.parse import quote, unquote, urlsplit
+from uuid import NAMESPACE_URL, uuid5
 import uvicorn
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
 from login_page import render_login_page
+from portal_theme import apply_theme
 from service_control import PROJECT_CONFIG, ServiceController
 
 
@@ -38,10 +42,44 @@ def parse_cookie_secure(value: str | None) -> bool:
     )
 
 
+def load_extra_users(value: str | None, primary_username: str) -> dict[str, str]:
+    if not value:
+        return {}
+
+    def unique_object(pairs):
+        result = {}
+        for key, password in pairs:
+            if key in result:
+                raise ValueError
+            result[key] = password
+        return result
+
+    try:
+        accounts = json.loads(value, object_pairs_hook=unique_object)
+        if not isinstance(accounts, dict) or primary_username in accounts:
+            raise ValueError
+        if any(not username or not isinstance(password, str) or not password
+               for username, password in accounts.items()):
+            raise ValueError
+    except (ValueError, TypeError, RecursionError):
+        raise RuntimeError("Invalid PORTAL_EXTRA_USERS configuration") from None
+    return accounts
+
+
+def user_id_for(username: str) -> str:
+    return str(uuid5(NAMESPACE_URL, "urn:amz-portal:user:" + username))
+
+
 LOGIN_USERNAME = required_setting("PORTAL_LOGIN_USERNAME")
+LOGIN_USER_ID = user_id_for(LOGIN_USERNAME)
 LOGIN_PASSWORD = required_setting("PORTAL_LOGIN_PASSWORD")
+EXTRA_USERS = load_extra_users(os.environ.get("PORTAL_EXTRA_USERS"), LOGIN_USERNAME)
 SESSION_SECRET = required_setting("PORTAL_SESSION_SECRET")
 COOKIE_SECURE = parse_cookie_secure(os.environ.get("PORTAL_COOKIE_SECURE"))
+
+
+def configured_accounts() -> dict[str, str]:
+    return {LOGIN_USERNAME: LOGIN_PASSWORD, **EXTRA_USERS}
 
 app = FastAPI(title="整合入口 - Amazon Tools Portal")
 app.add_middleware(
@@ -101,13 +139,15 @@ HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>整合入口 · Amazon Tools</title>
+__THEME_CSS__
+__THEME_INIT__
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
-  background: #0d0d1a;
-  color: #e2e8f0;
+  background: var(--page-bg);
+  color: var(--text);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -115,7 +155,7 @@ body {
 
 /* ── Topbar ── */
 .topbar {
-  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  background: var(--topbar-bg);
   padding: 16px 32px;
   border-bottom: 1px solid rgba(59, 130, 246, 0.2);
   display: flex;
@@ -129,26 +169,36 @@ body {
 .topbar-title {
   font-size: 17px;
   font-weight: 700;
-  letter-spacing: 0.3px;
-  color: #f1f5f9;
+  letter-spacing: 0;
+  white-space: nowrap;
+  color: var(--heading);
 }
 .topbar-sub {
   font-size: 11px;
-  color: #475569;
-  margin-left: auto;
-  letter-spacing: 0.3px;
+  color: var(--subtle);
+  margin-left: 8px;
+  letter-spacing: 0;
+}
+.topbar-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
+.current-user { min-width: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--muted); }
+@media (max-width: 540px) {
+  .topbar { padding: 12px 16px; gap: 8px; }
+  .topbar-sub { display: none; }
+  .topbar-title { font-size: 14px; }
+  .topbar-actions { gap: 8px; }
 }
 .logout-button {
   width: 34px;
   height: 34px;
+  flex: 0 0 34px;
   display: grid;
   place-items: center;
-  border: 1px solid #45485d;
+  border: 1px solid var(--border);
   border-radius: 6px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--muted);
 }
-.logout-button:hover { color: #f1f5f9; background: #303345; }
+.logout-button:hover { color: var(--heading); background: var(--hover-bg); }
 .logout-button svg { width: 17px; height: 17px; }
 
 /* ── Hero ── */
@@ -159,13 +209,13 @@ body {
 .hero h2 {
   font-size: 26px;
   font-weight: 700;
-  color: #f1f5f9;
+  color: var(--heading);
   margin-bottom: 8px;
-  letter-spacing: -0.3px;
+  letter-spacing: 0;
 }
 .hero p {
   font-size: 13px;
-  color: #64748b;
+  color: var(--subtle);
 }
 
 /* ── Grid ── */
@@ -183,8 +233,8 @@ body {
 
 /* ── Card base ── */
 .card {
-  background: #13131f;
-  border: 1px solid #1e2035;
+  background: var(--surface);
+  border: 1px solid var(--soft-border);
   border-radius: 14px;
   padding: 28px 24px 24px;
   position: relative;
@@ -204,7 +254,7 @@ a.card::before {
   position: absolute;
   top: 0; left: 24px; right: 24px;
   height: 2px;
-  background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+  background: linear-gradient(90deg, transparent, var(--blue), transparent);
   opacity: 0;
   transition: opacity 0.22s;
 }
@@ -221,20 +271,20 @@ a.card .card-arrow {
   position: absolute;
   bottom: 20px; right: 20px;
   font-size: 14px;
-  color: #334155;
+  color: var(--subtle);
   transition: color 0.22s, transform 0.22s;
 }
 a.card:hover .card-arrow {
-  color: #3b82f6;
+  color: var(--blue);
   transform: translate(2px, -2px);
 }
 
 /* Coming-soon card */
 div.card {
-  opacity: 0.42;
   cursor: not-allowed;
-  filter: grayscale(0.25);
 }
+div.card .card-icon { opacity: 0.55; filter: grayscale(0.25); }
+div.card .card-name { color: var(--muted); }
 
 /* ── Card internals ── */
 .card-icon {
@@ -247,20 +297,20 @@ div.card {
 .card-name {
   font-size: 17px;
   font-weight: 700;
-  color: #f1f5f9;
+  color: var(--heading);
   margin-bottom: 4px;
 }
 .card-sub {
   font-size: 10px;
-  color: #475569;
+  color: var(--subtle);
   text-transform: uppercase;
-  letter-spacing: 0.8px;
+  letter-spacing: 0;
   margin-bottom: 14px;
   font-weight: 600;
 }
 .card-desc {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--muted);
   line-height: 1.65;
 }
 
@@ -272,26 +322,26 @@ div.card {
   font-weight: 700;
   padding: 3px 9px;
   border-radius: 20px;
-  letter-spacing: 0.4px;
+  letter-spacing: 0;
 }
 .badge-live {
-  background: rgba(59, 130, 246, 0.12);
-  color: #60a5fa;
+  background: var(--blue-bg);
+  color: var(--blue);
   border: 1px solid rgba(59, 130, 246, 0.28);
 }
 .badge-checking {
   background: rgba(148, 163, 184, 0.1);
-  color: #94a3b8;
+  color: var(--muted);
   border: 1px solid rgba(148, 163, 184, 0.22);
 }
 .badge-offline {
-  background: rgba(239, 68, 68, 0.1);
-  color: #f87171;
+  background: var(--red-bg);
+  color: var(--red);
   border: 1px solid rgba(239, 68, 68, 0.25);
 }
 .badge-soon {
-  background: rgba(212, 168, 67, 0.12);
-  color: #d4a843;
+  background: var(--gold-bg);
+  color: var(--gold);
   border: 1px solid rgba(212, 168, 67, 0.28);
 }
 
@@ -301,37 +351,37 @@ div.card {
   text-align: center;
   padding: 20px 24px;
   font-size: 11px;
-  color: #1e293b;
-  border-top: 1px solid #13131f;
+  color: var(--subtle);
+  border-top: 1px solid var(--surface);
 }
 
 .service-card { padding: 0; display: flex; flex-direction: column; }
 .service-card:hover { border-color: rgba(59, 130, 246, 0.5); }
 .card-link { display: block; padding: 28px 24px 24px; color: inherit; text-decoration: none; flex: 1; }
-.card-link .card-arrow { float: right; color: #64748b; }
-.card-link:focus-visible, button:focus-visible { outline: 2px solid #60a5fa; outline-offset: -3px; }
-.service-controls { display: flex; align-items: center; gap: 10px; padding: 12px 24px; border-top: 1px solid #252637; }
+.card-link .card-arrow { float: right; color: var(--subtle); }
+.card-link:focus-visible, button:focus-visible { outline: 2px solid var(--blue); outline-offset: -3px; }
+.service-controls { display: flex; align-items: center; gap: 10px; padding: 12px 24px; border-top: 1px solid var(--soft-border); }
 button { font: inherit; cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: 0.45; }
-.service-switch { width: 42px; height: 24px; flex: 0 0 42px; border: 1px solid #64748b; border-radius: 20px; background: #363b49; padding: 3px; }
-.switch-thumb { display: block; width: 16px; height: 16px; background: #f1f5f9; border-radius: 50%; transition: transform 0.15s; }
-.service-switch[aria-checked="true"] { background: #16805d; border-color: #33ba90; }
+.service-switch { width: 42px; height: 24px; flex: 0 0 42px; border: 1px solid var(--subtle); border-radius: 20px; background: var(--switch-off); padding: 3px; }
+.switch-thumb { display: block; width: 16px; height: 16px; background: var(--switch-thumb); border-radius: 50%; transition: transform 0.15s; }
+.service-switch[aria-checked="true"] { background: var(--success-bg); border-color: var(--success-border); }
 .service-switch[aria-checked="true"] .switch-thumb { transform: translateX(17px); }
-.control-label { font-size: 12px; color: #a9b4c5; }
+.control-label { font-size: 12px; color: var(--muted); }
 .restart-wrap { margin-left: auto; display: inline-flex; }
-.restart-button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid #45485d; border-radius: 6px; color: #cbd5e1; background: transparent; }
-.restart-button:not(:disabled):hover { color: #f1f5f9; background: #303345; }
+.restart-button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: transparent; }
+.restart-button:not(:disabled):hover { color: var(--heading); background: var(--hover-bg); }
 .restart-button svg { width: 17px; height: 17px; }
-.service-message { color: #fca5a5; font-size: 12px; line-height: 1.6; padding: 0 24px 12px; overflow-wrap: anywhere; }
+.service-message { color: var(--red); font-size: 12px; line-height: 1.6; padding: 0 24px 12px; overflow-wrap: anywhere; }
 .service-message:empty { display: none; }
-dialog { margin: auto; width: min(420px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto; background: #191a26; color: #e2e8f0; border: 1px solid #45485d; border-radius: 8px; padding: 24px; }
+dialog { margin: auto; width: min(420px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto; background: var(--dialog-bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 24px; }
 dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
 dialog h3 { font-size: 18px; overflow-wrap: anywhere; }
-dialog p { margin-top: 14px; color: #b5c0d1; font-size: 14px; line-height: 1.7; }
-dialog .warning { color: #efc178; }
+dialog p { margin-top: 14px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+dialog .warning { color: var(--gold); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
-.dialog-actions button { border: 1px solid #545969; border-radius: 6px; padding: 9px 16px; background: #2a2d3a; color: #f1f5f9; }
-.dialog-actions .confirm-button { background: #216b50; border-color: #319372; }
+.dialog-actions button { border: 1px solid var(--border); border-radius: 6px; padding: 9px 16px; background: var(--button-bg); color: var(--heading); }
+.dialog-actions .confirm-button { background: var(--success-bg); border-color: var(--success-border); color: var(--on-success); }
 @media (prefers-reduced-motion: reduce) { .switch-thumb { transition: none; } }
 </style>
 </head>
@@ -341,9 +391,13 @@ dialog .warning { color: #efc178; }
   <span class="topbar-logo">🚀</span>
   <span class="topbar-title">整合入口</span>
   <span class="topbar-sub">Amazon Tools Portal &nbsp;·&nbsp; 47.84.113.76</span>
+  <div class="topbar-actions">
+    <span class="current-user" title="__CURRENT_USERNAME__">__CURRENT_USERNAME__</span>
+    __THEME_BUTTON__
   <button type="button" class="logout-button" id="logout-button" aria-label="退出登录" title="退出登录">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/></svg>
   </button>
+  </div>
 </div>
 
 <div class="hero">
@@ -652,9 +706,27 @@ def safe_next_path(candidate: str | None, prefix: str) -> str:
     return candidate
 
 
-def require_session(request: Request) -> None:
+def render_portal_page(username: str) -> str:
+    return apply_theme(HTML).replace("__CURRENT_USERNAME__", escape(username, quote=True))
+
+
+def session_username(request: Request) -> str | None:
     if request.session.get("authenticated") is not True:
+        return None
+    user_id = request.session.get("user_id")
+    if not isinstance(user_id, str):
+        return None
+    for username in configured_accounts():
+        if user_id == user_id_for(username):
+            return username
+    return None
+
+
+def require_session(request: Request) -> str:
+    username = session_username(request)
+    if username is None:
         raise HTTPException(401, "请先登录")
+    return username
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -665,16 +737,21 @@ def login_page(request: Request, next: str | None = None):
 
 @app.post("/api/auth/login")
 def login(payload: LoginRequest, request: Request):
-    username_matches = secrets.compare_digest(
-        payload.username.encode("utf-8"), LOGIN_USERNAME.encode("utf-8")
-    )
-    password_matches = secrets.compare_digest(
-        payload.password.encode("utf-8"), LOGIN_PASSWORD.encode("utf-8")
-    )
-    if not (username_matches and password_matches):
+    verified_username = None
+    for username, password in configured_accounts().items():
+        username_matches = secrets.compare_digest(
+            payload.username.encode("utf-8"), username.encode("utf-8")
+        )
+        password_matches = secrets.compare_digest(
+            payload.password.encode("utf-8"), password.encode("utf-8")
+        )
+        if username_matches and password_matches:
+            verified_username = username
+    if verified_username is None:
         raise HTTPException(401, "账号或密码不正确")
     request.session.clear()
     request.session["authenticated"] = True
+    request.session["user_id"] = user_id_for(verified_username)
     prefix = external_prefix(request)
     return {"redirect": safe_next_path(payload.next, prefix)}
 
@@ -685,6 +762,17 @@ def auth_check(request: Request):
     return Response(status_code=204)
 
 
+@app.get("/api/auth/user")
+def current_user(request: Request) -> Response:
+    headers = {"Cache-Control": "no-store"}
+    username = session_username(request)
+    if username is None:
+        return JSONResponse(
+            {"detail": "请先登录"}, status_code=401, headers=headers
+        )
+    return JSONResponse({"user_id": user_id_for(username)}, headers=headers)
+
+
 @app.post("/api/auth/logout")
 def logout(request: Request):
     request.session.clear()
@@ -693,14 +781,15 @@ def logout(request: Request):
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    if request.session.get("authenticated") is not True:
+    username = session_username(request)
+    if username is None:
         prefix = external_prefix(request)
         root = prefix_root(prefix)
         return RedirectResponse(
             f"{prefix}/login?next={quote(root, safe='/')}",
             status_code=302,
         )
-    return HTML
+    return HTMLResponse(render_portal_page(username), headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/status")

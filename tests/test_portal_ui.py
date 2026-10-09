@@ -15,7 +15,8 @@ def page():
             browser = engine.chromium.launch(channel="chrome", headless=True)
         except playwright.Error as exc:
             pytest.skip(f"Chrome unavailable: {exc}")
-        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        context = browser.new_context(viewport={"width": 1440, "height": 1000})
+        page = context.new_page()
         yield page
         browser.close()
 
@@ -28,7 +29,7 @@ def setup_page(page, system="Windows"):
         for key, service in portal.SERVICES.items()
     }, "controls": {"platform": system, "enabled": True}}
     requests = []
-    page.route("http://127.0.0.1:5000/", lambda route: route.fulfill(body=portal.HTML, content_type="text/html"))
+    page.route("http://127.0.0.1:5000/", lambda route: route.fulfill(body=portal.render_portal_page("test-user"), content_type="text/html"))
     page.route("**/api/status", lambda route: route.fulfill(json=state))
 
     def operate(route):

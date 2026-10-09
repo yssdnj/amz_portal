@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 os.environ["PORTAL_LOGIN_USERNAME"] = "test-user"
 os.environ["PORTAL_LOGIN_PASSWORD"] = "test-password"
+os.environ["PORTAL_EXTRA_USERS"] = "{}"
 os.environ["PORTAL_SESSION_SECRET"] = "test-session-secret-at-least-32-characters"
 os.environ["PORTAL_COOKIE_SECURE"] = "true"
 
